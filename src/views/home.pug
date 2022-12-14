@@ -10,11 +10,20 @@ html(lang="en")
         header 
             h1 Virtual Conferenc Hall 
         main 
-            form#nickName
-                input(type="text", placeholder="choose nickname", required)
-                button Save 
-            ul 
-            form#message
-                input(type="text", placeholder="write a msg", required)
-                button Send  
+            div#welcome
+                form 
+                    input(placeholder="Write the room name", required, type="text")
+                    button Enter room 
+                h4 Open Rooms: 
+                ul 
+            div#room 
+                h3 
+                ul 
+                    form#nickName
+                        input(placeholder="Choose the nick name", required, type="text")
+                        button Save
+                    form#msg 
+                        input(placeholder="Write the message", required, type="text")
+                        button Send
+        script(src="/socket.io/socket.io.js")
         script(src="/public/js/app.js")

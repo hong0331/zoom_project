@@ -1,7 +1,8 @@
 import http from "http";
-import WebSocket from "ws";
+import {Server}from "socket.io";
 import express from "express";
-import { parse } from "path";
+import {instrument} from "@socket.io/admin-ui";
+
 
 const app = express();
 
@@ -13,40 +14,88 @@ app.get("/*", (_, res) => res.redirect("/"));
 
 const handleListen = () => console.log(`Listening on http://localhost:3000`);
 
-const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
+// create the server that could support both http and ws 
+const httpServer = http.createServer(app);
+const wsServer= new Server(httpServer,{
+    cors: {
+        origin: ["https://admin.socket.io"],
+        credentials: true
+    }
+});
 
-function onSocketClose(){
-    console.log("Disconnected from browser ⛈️");
-}; 
+instrument(wsServer, {
+    auth: false,
+    mode: "development",
+  });
 
-//한개이상의 브라우져에서 들어와 소통을 하고 싶을때 
-// 연결된 모든 브라우져에 문자를 볼수있게 할거임 
-const socketsArr=[];
+/**
+ * find the public sockets 
+ */
+function publicRooms(){
+    const {sockets:
+            { adapter:
+                {sids,rooms},
+            },
+        } = wsServer; 
 
-// if messgage from back -> front, respond .... 
-wss.on("connection", (socket) => {
-    socketsArr.push(socket); 
-    socket ["nickname"]="Anon";
+    const publicRooms=[];
 
-    console.log("Connected to browser 🔥");
-    socket.on("close",onSocketClose); 
-    // send back the message to frontend 
-    socket.on ("message",(message) => {
-        //json string -> javascript 
-        const parsed = JSON.parse(message);
-        switch(parsed.type){
-            case "new_message":
-                socketsArr.forEach(aSocket => aSocket.send(`${socket.nickname}: ${parsed.payload}`));
-                break; 
-            case "nickname": 
-                socket["nickname"]= parsed.payload;
+    rooms.forEach((_,key)=>{
+        if (sids.get(key)===undefined){
+            publicRooms.push(key);
         }
-      
-        
     });
+    return publicRooms;
+}
+/**
+ * Count people in the certain room 
+ * @param {*} roomName 
+ * @returns 
+ */
+function countRoom(roomName){
+    return wsServer.sockets.adapter.rooms.get(roomName)?.size;
+}
+
+/**
+ * connect socket with front end 
+ */
+wsServer.on('connection', socket => {
+    socket["nickName"]="Anon";
+    // display the event of the socket 
+    socket.onAny((event)=>{
+        console.log (`Socket event : ${event}`);
+    }); 
+
+
+    socket.on("enter_room",(roomName, done) => {
+        // print the socket id 
+        console.log(socket.rooms);
+        // join the room into the socket
+        socket.join(roomName);
+        done();
+        // send message to the sockets in the joined room 
+        socket.to(roomName).emit("welcome", socket.nickName,countRoom(roomName));
+        //send room status to all
+        wsServer.sockets.emit("room_change",publicRooms());
+    }); 
+    // if someone left from the room.. 
+    socket.on("disconnecting",()=>{
+        socket.rooms.forEach(room=> socket.to(room).emit("bye", socket.nickName, countRoom(room)-1));
+    });
+
+    socket.on("disconnect",()=>{
+        wsServer.sockets.emit("room_change", publicRooms());
+    });
+
+    socket.on("new_message",(msg, roomName, done) => {
+        socket.to(roomName).emit("new_message",`${socket.nickName}:${msg}`);
+        done();
+    });
+    // in the nickname event, insert nickname in the socket
+    socket.on("nickName",nickName=> (socket["nickName"] = nickName));
 });
 
 
-server.listen(3000, handleListen);
 
+
+httpServer.listen(3000,handleListen);

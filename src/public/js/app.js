@@ -1,59 +1,114 @@
-const messageList= document.querySelector('ul');
-const nickNameForm= document.querySelector('#nickName');
-const messageForm= document.querySelector('#message');
+// import { WebSocketServer } from "ws";
 
-const socket = new WebSocket(`ws://${window.location.host}`);
+const socket = io (); 
+const welcome= document.getElementById('welcome');
+const form = welcome.querySelector("form");
 
-// send information in a string format to backend 
-function makeMessage(type,payload){
-    const msg= {type, payload}; 
-    return JSON.stringify(msg);
-};
+// hide the messagebox until the roomName has enter
+const room= document.getElementById("room");
+room.hidden= true; 
 
-socket.addEventListener("open", () => {
-    console.log("Connected to Server ✅");
-    socket
-});
+let roomName; 
 
-socket.addEventListener("message",(message)=> {
-    const li = document.createElement ('li');
-    li.innerText=message.data;
-    messageList.append(li);
-    // console.log("Just got this:", message.data," from the server" )
-})
-
-socket.addEventListener("close",()=>{
-    console.log("Disconnected from Server 🚫 ")
-})
-
-function handleSubmit(event){
+/**
+ * pass user's room name to backend
+ * @param {*} event 
+ */
+function handleRoomSubmit(event){
     event.preventDefault();
-    const input= messageForm.querySelector("input");
-    //sending message to backend
-    socket.send (makeMessage("new_message", input.value)); 
-    const li = document.createElement ('li');
-    li.innerText=`You: ${input.value}`;
-    messageList.append(li);
-    input.value= ""; 
-}; 
 
+    const input= form.querySelector('input');
+    socket.emit('enter_room', input.value, showRoom); 
+    roomName= input.value;
+    input.value=""
+}
+
+/**
+ * pass user's messaage to backend
+ * @param {*} event 
+ */
+function handleMessageSubmit(event){
+    event.preventDefault();
+    const input= room.querySelector("#msg input");
+    const value= input.value; 
+    socket.emit("new_message",input.value, roomName, () => {
+        addMessage(`You: ${value}`); 
+    }); 
+    input.value="";
+}
+/**
+ * 
+ * @param {*} event 
+ */
 function handleNickNameSubmit(event){
     event.preventDefault();
-    const input = nickNameForm.querySelector("input");
-    socket.send(makeMessage("nickname",input.value)); 
-    input.value="";
-};
+    const input= room.querySelector("#nickName input");
+    socket.emit('nickName',input.value); 
+}
+/**
+ * display the passed in message 
+ * @param {*} message 
+ */
+function addMessage(message){
 
-messageForm.addEventListener("submit", handleSubmit); 
-nickNameForm.addEventListener("submit", handleNickNameSubmit); 
+    const ul = room.querySelector('ul');
+    const li= document.createElement('li');
+
+    li.innerText=message;
+    ul.appendChild(li);
+}
+/**
+ * Allow user to write message,
+ * Display the room name that user has entered  
+ */
+function showRoom(){
+    welcome.hidden= true;
+    room.hidden=false; 
+    
+    const h3= room.querySelector('h3');
+    h3.innerText= `Room: ${roomName}`;
+
+    const msgForm = room.querySelector('#msg');
+    const nickNameForm = room.querySelector('#nickName');
+
+    msgForm.addEventListener("submit",handleMessageSubmit);
+    nickNameForm.addEventListener("submit",handleNickNameSubmit);
+}
 
 
 
+form.addEventListener("submit",handleRoomSubmit);
 
+// if someone joined, send message to all people in the room 
+socket.on("welcome",(user, newCount) =>{
+    const h3= room.querySelector('h3');
+    h3.innerText= `Room: ${roomName} (${newCount})`;
 
+    addMessage(`${user} joined!`);
+}); 
 
+// if someone left the room, notify others in the room 
+socket.on("bye",(user, newCount)=>{
+    const h3= room.querySelector('h3');
+    h3.innerText= `Room: ${roomName} (${newCount})`;
 
-// // after 10 seconds, sending message backend -> frontend 
-// setTimeout(() => {
-//     socket.send("hello from browser 💫");
-// },10000);
+    addMessage(`${user} left!`);
+});
+
+socket.on("new_message", addMessage); 
+
+//send sockets if new room has created 
+socket.on("room_change",(rooms)=>{
+    const roomList = welcome.querySelector('ul');
+    //update it if rooms is unavailable
+    roomList.innerHTML="";
+    if (rooms.length===0){
+        return; 
+    }
+   
+    rooms.forEach((room)=>{
+        const li= document.createElement('li');
+        li.innerText=room;
+        roomList.append(li); 
+    })
+});
